@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iPad カメラ録画アプリ</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #video {
+            width: 100%;
+            max-width: 640px;
+            background-color: #000;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            background-color: #0066cc;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        button:disabled {
+            background-color: #cccccc;
+        }
+
+        button:hover:not(:disabled) {
+            background-color: #0055aa;
+        }
+
+        #videos-container {
+            width: 100%;
+            max-width: 640px;
+        }
+
+        .video-item {
+            margin-bottom: 15px;
+        }
+
+        .recorded-video {
+            width: 100%;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>iPad カメラ録画アプリ</h1>
+        
+        <video id="video" autoplay playsinline muted></video>
+        
+        <div class="controls">
+            <button id="startBtn">開始</button>
+            <button id="recordBtn" disabled>録画</button>
+            <button id="stopBtn" disabled>停止</button>
+            <button id="switchBtn">カメラ切替</button>
+        </div>
+        
+        <div id="videos-container"></div>
+    </div>
+
+    <script>
+        // 必要な変数を定義
+        let stream;
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isFrontCamera = true; // フロントカメラかバックカメラか
+        
+        // DOM要素
+        const videoElement = document.getElementById('video');
+        const startBtn = document.getElementById('startBtn');
+        const recordBtn = document.getElementById('recordBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const switchBtn = document.getElementById('switchBtn');
+        const videosContainer = document.getElementById('videos-container');
+        
+        // カメラの開始
+        async function startCamera() {
+            try {
+                // カメラの制約を設定
+                const constraints = {
+                    video: {
+                        facingMode: isFrontCamera ? 'user' : 'environment',
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    },
+                    audio: true
+                };
+                
+                // メディアストリームを取得
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                
+                // ビデオ要素にストリームを設定
+                videoElement.srcObject = stream;
+                
+                // ボタンの状態を更新
+                startBtn.disabled = true;
+                recordBtn.disabled = false;
+                switchBtn.disabled = false;
+            } catch (err) {
+                console.error('カメラの起動に失敗しました:', err);
+                alert('カメラの起動に失敗しました: ' + err.message);
+            }
+        }
+        
+        // 録画の開始
+        function startRecording() {
+            // 録画したデータを保存する配列をリセット
+            recordedChunks = [];
+            
+            // MediaRecorderのオプションを設定
+            const options = { mimeType: 'video/webm;codecs=vp9,opus' };
+            
+            try {
+                // MediaRecorderを初期化
+                mediaRecorder = new MediaRecorder(stream, options);
+            } catch (e) {
+                // フォールバックオプション
+                try {
+                    mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8,opus' });
+                } catch (e2) {
+                    try {
+                        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                    } catch (e3) {
+                        try {
+                            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/mp4' });
+                        } catch (e4) {
+                            console.error('サポートされていないフォーマット:', e4);
+                            alert('お使いのブラウザでは録画機能がサポートされていません。');
+                            return;
+                        }
+                    }
+                }
+            }
+            
+            // データが利用可能になったときのイベント
+            mediaRecorder.ondataavailable = function(event) {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+            
+            // 録画が停止したときのイベント
+            mediaRecorder.onstop = function() {
+                // 録画されたデータからBlobを作成
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                
+                // BlobからURLを作成
+                const url = URL.createObjectURL(blob);
+                
+                // 録画されたビデオを表示するための要素を作成
+                const videoItem = document.createElement('div');
+                videoItem.className = 'video-item';
+                
+                const recordedVideo = document.createElement('video');
+                recordedVideo.className = 'recorded-video';
+                recordedVideo.controls = true;
+                recordedVideo.src = url;
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = url;
+                downloadLink.download = 'recorded-video-' + new Date().toISOString() + '.webm';
+                downloadLink.textContent = 'ダウンロード';
+                downloadLink.style.display = 'block';
+                downloadLink.style.marginTop = '5px';
+                
+                // 要素を追加
+                videoItem.appendChild(recordedVideo);
+                videoItem.appendChild(downloadLink);
+                videosContainer.prepend(videoItem);
+                
+                // ボタンの状態を更新
+                recordBtn.disabled = false;
+                stopBtn.disabled = true;
+            };
+            
+            // 録画を開始
+            mediaRecorder.start(100); // 100ミリ秒ごとにデータを取得
+            
+            // ボタンの状態を更新
+            recordBtn.disabled = true;
+            stopBtn.disabled = false;
+        }
+        
+        // 録画の停止
+        function stopRecording() {
+            mediaRecorder.stop();
+        }
+        
+        // カメラの切り替え
+        async function switchCamera() {
+            // 現在のストリームを停止
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            
+            // カメラの向きを切り替え
+            isFrontCamera = !isFrontCamera;
+            
+            // カメラを再起動
+            await startCamera();
+        }
+        
+        // イベントリスナーを設定
+        startBtn.addEventListener('click', startCamera);
+        recordBtn.addEventListener('click', startRecording);
+        stopBtn.addEventListener('click', stopRecording);
+        switchBtn.addEventListener('click', switchCamera);
+        
+        // ページが閉じられたときにストリームを停止
+        window.addEventListener('beforeunload', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+        });
+    </script>
+</body>
+</html>
